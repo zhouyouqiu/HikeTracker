@@ -1,10 +1,3 @@
-//
-//  HikeTrackerApp.swift
-//  HikeTracker
-//
-//  Created by zhouyouqiu on 2026/5/11.
-//
-
 import SwiftUI
 import SwiftData
 
@@ -12,7 +5,7 @@ import SwiftData
 struct HikeTrackerApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            HikeRecord.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
