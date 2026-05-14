@@ -25,7 +25,7 @@ final class RecordingViewModel {
     private var timer: Timer?
     private var recordingStartTime: Date?
     private var accumulatedDuration: TimeInterval = 0
-    private var lastLocation: CLLocation?
+    var lastLocation: CLLocation?
 
     private let locationManager: LocationManager
     private var modelContext: ModelContext?
@@ -121,7 +121,7 @@ final class RecordingViewModel {
 
     // MARK: - Private
 
-    private func addLocation(_ location: CLLocation) {
+    func addLocation(_ location: CLLocation) {
         if let last = lastLocation {
             let distance = location.distance(from: last)
             // 过滤距离太近的点（小于 5 米视为漂移）

@@ -55,7 +55,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         guard let location = locations.last else { return }
 
         // 过滤精度太低的点（大于 10 米）
-        guard location.horizontalAccuracy >= 0 && location.horizontalAccuracy <= 10 else { return }
+        guard location.horizontalAccuracy >= 0 && location.horizontalAccuracy <= 20 else { return }
 
         // 过滤无效速度的点
         guard location.speed >= 0 && location.speed < 15 else { return }
