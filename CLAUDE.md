@@ -1,51 +1,74 @@
-# HikeTracker
+# CLAUDE.md
 
-iOS 徒步轨迹记录应用，使用 SwiftUI + MapKit + CoreLocation + SwiftData 构建。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 项目结构
+iOS 徒步轨迹记录应用，SwiftUI + MapKit + CoreLocation + SwiftData 构建。真机运行（GPS 需真机）。
+
+## 构建与测试
+
+项目通过 Xcode 工程（`HikeTracker.xcodeproj`）管理，scheme 名为 `HikeTracker`，Bundle ID 仅在真机/模拟器构建时需要。
+
+```bash
+# 构建
+xcodebuild -project HikeTracker.xcodeproj -scheme HikeTracker -sdk iphonesimulator build
+
+# 运行全部测试（Swift Testing）
+xcodebuild -project HikeTracker.xcodeproj -scheme HikeTracker \
+  -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 15' test
+
+# 运行单个测试（Swift Testing 用 TestID，格式：StructName/methodName）
+xcodebuild ... test -only-testing:HikeTrackerTests/RecordingViewModelTests/testFullRecordingFlow
+```
+
+注意：测试使用 **Swift Testing**（`import Testing`、`@Test`、`#expect`），不是 XCTest。测试位于 `HikeTrackerTests/RecordingViewModelTests.swift`，端到端覆盖录制→持久化流程，依赖 `ModelConfiguration(isStoredInMemoryOnly: true)` 内存库。
+
+## 架构
+
+标准 MVVM：`HikeTrackerApp`（SwiftData ModelContainer 注入）→ `ContentView`（TabView 三栏）→ 各 Tab 的 View + ViewModel。
+
+**状态管理用 `@Observable`（非 Combine）**：`LocationManager`、`RecordingViewModel` 都是 `@Observable final class`，View 通过 `@State` / `@Environment` 持有。
+
+**数据流（录制时）**：
+1. `LocationManager`（CLLocationManager delegate）收到原始 GPS 点
+2. `LocationManager.didUpdateLocations` 过滤：水平精度 `>20m` 或 `<=0` 丢弃；`speed >=15` 或 `<0` 丢弃
+3. 通过的点位经 `onLocationUpdate` 回调给 `RecordingViewModel.addLocation`
+4. `addLocation` 再过滤：距上一点 `<5m` 视为漂移；若距上一点 `<15m` 且方向偏转 `>90°` 视为抖动
+5. 通过则累加距离/海拔，append 到 `trackedLocations`
+6. `stopRecording` 时把 `trackedLocations` 转成 `LocationPoint` 数组写入 `HikeRecord`，持久化到 SwiftData
+
+⚠️ 过滤阈值修改要谨慎：最近一次 bug（commit 68b9cc6）就是精度阈值过严导致轨迹完全不记录。`LocationManager` 的 20m 阈值和 `addLocation` 的 5m 阈值是两道独立闸门。
+
+## 坐标转换（中国地图偏移）
+
+`Services/CoordinateConverter.swift` 实现 WGS-84 → GCJ-02 转换 + Douglas-Peucker 轨迹简化。**这是为了在中国地图上正确显示**（国内 MapKit 显示需要 GCJ-02 坐标）。`isInChina()` 判断坐标是否在国境内，境外直接返回原坐标。渲染地图前需调用此转换，存储仍用原始 WGS-84。
+
+## 模型
+
+`Models/HikeRecord.swift` 定义两个 `@Model`：
+- `HikeRecord`：一次徒步，`@Relationship(deleteRule: .cascade)` 关联 `LocationPoint` 数组
+- `LocationPoint`：单个 GPS 点
+
+`HikeRecord` 内置格式化计算属性（`formattedDistance`、`formattedDuration`、`formattedPace`、`averagePace`、`averageSpeed`），UI 直接读取。
+
+## 关键文件
 
 ```
 HikeTracker/HikeTracker/
-├── HikeTrackerApp.swift          # App 入口，TabView 三栏（记录/历史/统计）
-├── Info.plist                    # 位置权限 + 后台定位（UIBackgroundModes: location）
-├── Models/
-│   └── HikeRecord.swift          # SwiftData 数据模型（HikeRecord + LocationPoint）
+├── HikeTrackerApp.swift          # @main，ModelContainer 配置（isStoredInMemoryOnly: false）
+├── ContentView.swift             # TabView 三栏入口（记录/历史/统计）
+├── Info.plist                    # NSLocationWhenInUseUsageDescription、NSLocationAlwaysUsageDescription、UIBackgroundModes=location
+├── Models/HikeRecord.swift       # SwiftData 模型 + 格式化计算属性
 ├── Services/
-│   └── LocationManager.swift     # CoreLocation 高精度定位服务（5m 过滤，20m 精度阈值）
+│   ├── LocationManager.swift     # CoreLocation 封装（@Observable，回调式）
+│   └── CoordinateConverter.swift # WGS-84↔GCJ-02 + Douglas-Peucker 简化
 ├── ViewModels/
-│   ├── RecordingViewModel.swift  # 录制状态管理（idle/recording/paused），轨迹距离/海拔计算
-│   └── StatisticsViewModel.swift # 配速分段、海拔剖面、汇总统计计算
-└── Views/
-    ├── RecordingView.swift       # 主录制界面：全屏地图 + 实时轨迹 + 开始/暂停/停止控制
-    ├── HikeDetailView.swift      # 徒步详情：轨迹回放 + 运动数据 + 配速/海拔图表（Swift Charts）
-    ├── HistoryListView.swift     # 历史记录：按日期分组，滑动删除
-    ├── StatisticsView.swift      # 数据统计：累计总览 + 月度里程柱状图 + 最近记录
-    └── Components/
-        ├── MapOverlayView.swift  # MapKit 地图 + MKPolyline 轨迹渲染
-        └── StatCard.swift        # 统计卡片组件
+│   ├── RecordingViewModel.swift  # RecordingState(idle/recording/paused)、过滤、距离海拔累加
+│   └── StatisticsViewModel.swift # 配速分段、海拔剖面、月度汇总
+└── Views/                        # SwiftUI 视图 + Components/(MapOverlayView, StatCard)
 ```
 
-## 需求
+## Xcode 工程配置要点
 
-- GPS 实时轨迹记录，支持后台持续定位
-- 地图渲染轨迹折线（MapKit + MKPolyline）
-- 数据统计：距离、时长、配速、海拔（最高/最低/累计爬升/下降）
-- 配速折线图（每公里分段配速）、海拔剖面图（Swift Charts）
-- 历史记录管理（按日期分组、查看详情、删除）
-- 累计统计（总里程、总次数、月度图表）
-
-## 技术要点
-
-- 定位精度：`kCLLocationAccuracyBestForNavigation`，`distanceFilter = 5m`，水平精度 > 20m 的点过滤
-- 轨迹点间距 < 2m 视为漂移过滤
-- SwiftData 持久化，`@Model` 宏定义模型，`.modelContainer(for:)` 配置
-- Xcode 新建项目时 Interface 选 SwiftUI，Storage 选 None（SwiftData 通过代码配置），Testing 选 None
-- Info.plist 需配置 `NSLocationWhenInUseUsageDescription`、`NSLocationAlwaysUsageDescription`、`UIBackgroundModes`
-- 需在 Signing & Capabilities 中添加 Background Modes → Location updates
-
-## 构建运行
-
-1. Xcode → File → New → Project → App，Product Name 填 `HikeTracker`
-2. 将 `HikeTracker/HikeTracker/` 下文件拖入项目替换
-3. 添加 Background Modes capability（Location updates）
-4. 真机运行（GPS 定位需要真机）
+- 新建项目时：Interface=SwiftUI，Storage=None（SwiftData 代码配置），Testing=None
+- **必须**在 Signing & Capabilities 添加 Background Modes → Location updates
+- `UIBackgroundModes` 需含 `location`，否则后台无法持续定位

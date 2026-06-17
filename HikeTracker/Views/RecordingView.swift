@@ -17,21 +17,20 @@ struct RecordingView: View {
             )
             .ignoresSafeArea()
 
-            // 顶部状态栏
+            // 顶部：紧凑数据胶囊
             VStack {
-                recordingStatusBar
+                compactStatsPill
                     .padding(.top, 60)
                     .padding(.horizontal)
                 Spacer()
             }
 
-            // 底部控制面板
-            VStack(spacing: 20) {
-                statsPanel
-                controlButtons
+            // 底部：主按钮（+暂停时露出结束按钮）
+            VStack {
+                Spacer()
+                bottomControls
+                    .padding(.bottom, 40)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 40)
         }
         .onAppear {
             if viewModel == nil {
@@ -53,111 +52,108 @@ struct RecordingView: View {
         }
     }
 
-    // MARK: - Subviews
+    // MARK: - 顶部数据胶囊
 
     @ViewBuilder
-    private var recordingStatusBar: some View {
-        if let vm = viewModel, vm.state != .idle {
-            HStack {
-                if vm.state == .recording {
+    private var compactStatsPill: some View {
+        let state = viewModel?.state ?? .idle
+        HStack(spacing: 10) {
+            Text(viewModel?.formattedDistance ?? "0 m")
+            separator
+            Text(viewModel?.formattedDuration ?? "00:00")
+            separator
+            Text(String(format: "%.0f m", viewModel?.currentAltitude ?? 0))
+
+            if state != .idle {
+                separator
+                HStack(spacing: 4) {
                     Circle()
-                        .fill(.red)
-                        .frame(width: 10, height: 10)
-                        .pulseAnimation()
-                    Text("录制中")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.red)
-                    Spacer()
-                    if vm.trackedLocations.count > 0 {
-                        Text("\(vm.trackedLocations.count) 个轨迹点")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else if vm.state == .paused {
-                    Circle()
-                        .fill(.orange)
-                        .frame(width: 10, height: 10)
-                    Text("已暂停")
-                        .font(.subheadline.bold())
-                        .foregroundStyle(.orange)
-                    Spacer()
+                        .fill(state == .recording ? .red : .orange)
+                        .frame(width: 8, height: 8)
+                        .pulse(if: state == .recording)
+                    Text(state == .recording ? "录制中" : "已暂停")
+                        .font(.caption.bold())
+                        .foregroundStyle(state == .recording ? .red : .orange)
                 }
             }
-            .padding(10)
-            .background(.ultraThickMaterial, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .font(.subheadline.bold())
+        .monospacedDigit()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThickMaterial, in: Capsule())
+        .overlay(
+            Capsule().stroke(.white.opacity(0.15), lineWidth: 0.5)
+        )
+        .shadow(radius: 3)
+    }
+
+    private var separator: some View {
+        Text("·").foregroundStyle(.secondary).font(.subheadline)
+    }
+
+    // MARK: - 底部控制
+
+    @ViewBuilder
+    private var bottomControls: some View {
+        let state = viewModel?.state ?? .idle
+        HStack(spacing: 28) {
+            // 结束按钮：仅在暂停时出现
+            if state == .paused {
+                Button {
+                    viewModel?.stopRecording()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                        .frame(width: 60, height: 60)
+                        .background(.red, in: Circle())
+                        .shadow(radius: 4)
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+
+            // 主按钮：状态变形
+            Button {
+                primaryAction(for: state)
+            } label: {
+                primaryButtonLabel(for: state)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: state)
+    }
+
+    private func primaryAction(for state: RecordingState) {
+        guard let vm = viewModel else { return }
+        switch state {
+        case .idle:
+            vm.startRecording()
+        case .recording:
+            vm.pauseRecording()
+        case .paused:
+            vm.resumeRecording()
         }
     }
 
-    private var statsPanel: some View {
-        HStack(spacing: 12) {
-            StatCard(
-                title: "距离",
-                value: viewModel?.formattedDistance ?? "0 m",
-                icon: "figure.walk"
-            )
-            StatCard(
-                title: "时长",
-                value: viewModel?.formattedDuration ?? "00:00",
-                icon: "clock"
-            )
-            StatCard(
-                title: "海拔",
-                value: String(format: "%.0f m", viewModel?.currentAltitude ?? 0),
-                icon: "mountain.2"
-            )
-        }
-    }
-
-    private var controlButtons: some View {
-        HStack(spacing: 50) {
-            // 开始/继续按钮
-            Button {
-                guard let vm = viewModel else { return }
-                if vm.state == .idle || vm.state == .paused {
-                    if vm.state == .idle {
-                        vm.startRecording()
-                    } else {
-                        vm.resumeRecording()
-                    }
-                }
-            } label: {
-                Image(systemName: viewModel?.state == .idle || viewModel?.state == .paused ? "play.fill" : "play.fill")
-                    .font(.title)
-                    .foregroundStyle(.white)
-                    .frame(width: 70, height: 70)
-                    .background(.green, in: Circle())
-                    .shadow(radius: 4)
+    @ViewBuilder
+    private func primaryButtonLabel(for state: RecordingState) -> some View {
+        let (icon, color, label): (String, Color, String) = {
+            switch state {
+            case .idle:     return ("play.fill", .green, "开始")
+            case .recording:return ("pause.fill", .orange, "暂停")
+            case .paused:   return ("play.fill", .green, "继续")
             }
-            .opacity(viewModel?.state != .recording ? 1 : 0.3)
-            .disabled(viewModel?.state == .recording)
-
-            // 暂停按钮
-            Button {
-                viewModel?.pauseRecording()
-            } label: {
-                Image(systemName: "pause.fill")
-                    .font(.title)
-                    .foregroundStyle(.white)
-                    .frame(width: 70, height: 70)
-                    .background(.orange, in: Circle())
-                    .shadow(radius: 4)
-            }
-            .opacity(viewModel?.state == .recording ? 1 : 0.3)
-            .disabled(viewModel?.state != .recording)
-
-            // 停止按钮
-            Button {
-                viewModel?.stopRecording()
-            } label: {
-                Image(systemName: "stop.fill")
-                    .font(.title)
-                    .foregroundStyle(.white)
-                    .frame(width: 70, height: 70)
-                    .background(.red, in: Circle())
-                    .shadow(radius: 4)
-            }
-            .opacity(viewModel?.state == .recording || viewModel?.state == .paused ? 1 : 0.3)
-            .disabled(viewModel?.state == .idle)
+        }()
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.title)
+                .foregroundStyle(.white)
+                .frame(width: 80, height: 80)
+                .background(color, in: Circle())
+                .shadow(radius: 5)
+            Text(label)
+                .font(.caption.bold())
+                .foregroundStyle(.primary)
         }
     }
 
@@ -167,27 +163,8 @@ struct RecordingView: View {
         guard let vm = viewModel, !vm.trackedLocations.isEmpty else { return nil }
         let converted = CoordinateConverter.wgs84ToGcj02(vm.trackedLocations)
         let simplified = CoordinateConverter.simplify(converted, epsilon: 10.0)
-        return MKPolyline(coordinates: simplified, count: simplified.count)
-    }
-
-    private var formattedDistance: String {
-        guard let vm = viewModel else { return "0 m" }
-        let dist = vm.currentDistance
-        if dist >= 1000 {
-            return String(format: "%.2f km", dist / 1000.0)
-        }
-        return String(format: "%.0f m", dist)
-    }
-
-    private var formattedDuration: String {
-        guard let vm = viewModel else { return "00:00" }
-        let hours = Int(vm.currentDuration) / 3600
-        let minutes = (Int(vm.currentDuration) % 3600) / 60
-        let seconds = Int(vm.currentDuration) % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%d:%02d", minutes, seconds)
+        let smoothed = CoordinateConverter.smoothPath(simplified, segments: 10)
+        return MKPolyline(coordinates: smoothed, count: smoothed.count)
     }
 
     private func checkLocationPermission() {
@@ -197,9 +174,22 @@ struct RecordingView: View {
     }
 }
 
+private struct NoOpModifier: ViewModifier {
+    func body(content: Content) -> Content { content }
+}
+
 extension View {
     func pulseAnimation() -> some View {
         self.modifier(PulseEffect())
+    }
+
+    @ViewBuilder
+    func pulse(if condition: Bool) -> some View {
+        if condition {
+            self.modifier(PulseEffect())
+        } else {
+            self
+        }
     }
 }
 

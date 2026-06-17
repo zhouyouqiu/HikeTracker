@@ -16,6 +16,11 @@ final class HikeRecord {
     var minAltitude: Double
     @Relationship(deleteRule: .cascade) var locations: [LocationPoint]
 
+    /// 按 GPS 采集时间排序的轨迹点（SwiftData @Relationship 不保证顺序）
+    var sortedLocations: [LocationPoint] {
+        locations.sorted { $0.timestamp < $1.timestamp }
+    }
+
     init(
         id: UUID = UUID(),
         name: String = "",

@@ -6,14 +6,15 @@ struct StatisticsViewModel {
 
     /// 每公里配速数组（分钟/公里）
     var pacePerKm: [(km: Double, pace: Double)] {
-        guard hike.locations.count >= 2 else { return [] }
+        let locations = hike.sortedLocations
+        guard locations.count >= 2 else { return [] }
         var segments: [(km: Double, pace: Double)] = []
         var accumulatedDistance: Double = 0
         var segmentStartIndex = 0
 
-        for i in 1..<hike.locations.count {
-            let prev = hike.locations[i - 1]
-            let curr = hike.locations[i]
+        for i in 1..<locations.count {
+            let prev = locations[i - 1]
+            let curr = locations[i]
             let coord1 = CLLocationCoordinate2D(latitude: prev.latitude, longitude: prev.longitude)
             let coord2 = CLLocationCoordinate2D(latitude: curr.latitude, longitude: curr.longitude)
             let loc1 = CLLocation(coordinate: coord1, altitude: prev.altitude, horizontalAccuracy: prev.horizontalAccuracy, verticalAccuracy: 0, timestamp: prev.timestamp)
@@ -22,7 +23,7 @@ struct StatisticsViewModel {
             accumulatedDistance += loc1.distance(from: loc2)
 
             if accumulatedDistance >= 1000 {
-                let timeInterval = curr.timestamp.timeIntervalSince(hike.locations[segmentStartIndex].timestamp)
+                let timeInterval = curr.timestamp.timeIntervalSince(locations[segmentStartIndex].timestamp)
                 let pace = timeInterval / 60.0 // 分钟/公里
                 let km = segments.count + 1
                 segments.append((km: Double(km), pace: pace))
@@ -36,16 +37,17 @@ struct StatisticsViewModel {
 
     /// 海拔剖面数据（用于图表）
     var altitudeProfile: [(distance: Double, altitude: Double)] {
-        guard hike.locations.count >= 1 else { return [] }
+        let locations = hike.sortedLocations
+        guard locations.count >= 1 else { return [] }
         var points: [(distance: Double, altitude: Double)] = []
         var accumulatedDistance: Double = 0
 
-        for (i, location) in hike.locations.enumerated() {
+        for (i, location) in locations.enumerated() {
             if i == 0 {
                 points.append((distance: 0, altitude: location.altitude))
                 continue
             }
-            let prev = hike.locations[i - 1]
+            let prev = locations[i - 1]
             let coord1 = CLLocationCoordinate2D(latitude: prev.latitude, longitude: prev.longitude)
             let coord2 = CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
             let loc1 = CLLocation(coordinate: coord1, altitude: prev.altitude, horizontalAccuracy: prev.horizontalAccuracy, verticalAccuracy: 0, timestamp: prev.timestamp)

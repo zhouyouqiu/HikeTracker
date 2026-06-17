@@ -1,7 +1,8 @@
 import Foundation
 import CoreLocation
+import MapKit
 
-/// WGS 84 → GCJ-02 坐标转换 + 轨迹简化
+/// WGS 84 → GCJ-02 坐标转换 + 轨迹简化 + 样条平滑
 enum CoordinateConverter {
 
     private static let a = 6378245.0 // 长半轴
@@ -73,6 +74,47 @@ enum CoordinateConverter {
         }
     }
 
+    // MARK: - 轨迹平滑（Catmull-Rom 样条插值）
+
+    /// 对折线做 Catmull-Rom 样条插值，在相邻点之间生成曲线段，让 MKPolyline 视觉上平滑
+    /// - Parameters:
+    ///   - coords: 输入坐标（建议先经过 simplify 抽稀）
+    ///   - segments: 每对相邻点之间插入的段数（越大越密越平滑，默认 10）
+    /// - Returns: 平滑密集化后的坐标数组
+    /// 使用 MKMapPoint 平面投影插值，避免经纬度非线性导致的距离失真
+    static func smoothPath(_ coords: [CLLocationCoordinate2D], segments: Int = 10) -> [CLLocationCoordinate2D] {
+        guard coords.count >= 3 else { return coords }
+        let pts = coords.map(MKMapPoint.init)
+
+        var result: [CLLocationCoordinate2D] = [pts[0].coordinate]
+
+        for i in 0..<(pts.count - 1) {
+            let p0 = pts[max(0, i - 1)]
+            let p1 = pts[i]
+            let p2 = pts[i + 1]
+            let p3 = pts[min(pts.count - 1, i + 2)]
+
+            for j in 1...segments {
+                let t = Double(j) / Double(segments)
+                let x = catmullRom(p0.x, p1.x, p2.x, p3.x, t)
+                let y = catmullRom(p0.y, p1.y, p2.y, p3.y, t)
+                result.append(MKMapPoint(x: x, y: y).coordinate)
+            }
+        }
+        return result
+    }
+
+    private static func catmullRom(_ p0: Double, _ p1: Double, _ p2: Double, _ p3: Double, _ t: Double) -> Double {
+        let t2 = t * t
+        let t3 = t2 * t
+        return 0.5 * ((2 * p1)
+                      + (-p0 + p2) * t
+                      + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+                      + (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+    }
+
+    // MARK: - Private
+
     /// 点到线段的垂直距离（米）
     private static func perpendicularDistance(_ point: CLLocationCoordinate2D, lineStart: CLLocationCoordinate2D, lineEnd: CLLocationCoordinate2D) -> Double {
         let p = CLLocation(latitude: point.latitude, longitude: point.longitude)
@@ -95,8 +137,6 @@ enum CoordinateConverter {
 
         return p.distance(from: projection)
     }
-
-    // MARK: - Private
 
     private static func transformLat(x: Double, y: Double) -> Double {
         var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * sqrt(abs(x))
